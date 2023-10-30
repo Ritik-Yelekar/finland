@@ -1,0 +1,313 @@
+//Hydrow Starr
+int Node_ID = 2010;
+const char server[] = "api.thingspeak.com";
+const char resource[] = "https://api.thingspeak.com/update?";
+//const char resource[] = "https://api.thingspeak.com/update?";
+String apiKeyValue = "JFMRILDGIB****";
+ const int  port = 80;
+const char apn[] = "airtelgprs.com";
+const char gprsUser[] = "";
+const char gprsPass[] = "";
+const char simPIN[]   = "";
+
+bool res = 0;
+long duration;
+
+#define MODEM_RST            14
+#define MODEM_TX             27
+#define MODEM_RX             26
+int sent_status = 0;
+#define SerialMon Serial
+#define SerialAT Serial1
+#define TINY_GSM_MODEM_SIM800      // Modem is SIM800
+#define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
+#include <Wire.h>
+#include <TinyGsmClient.h>
+#ifdef DUMP_AT_COMMANDS
+#include <StreamDebugger.h>
+StreamDebugger debugger(SerialAT, SerialMon);
+TinyGsm modem(debugger);
+#else
+TinyGsm modem(SerialAT);
+#endif
+
+TinyGsmClient client(modem);
+
+int led = 32;
+
+
+//#include <NewPing.h>
+const int trigPin = 18;
+const int echoPin = 5;
+
+#include <OneWire.h>
+#include <DallasTemperature.h>
+const int oneWireBus = 18;
+OneWire oneWire(oneWireBus);
+DallasTemperature sensors(&oneWire);
+
+float temperature;
+float distance;
+
+float distance_sum = 0;
+float temp_sum = 0;
+float dist_f = 0;
+float temp_f = 0;
+int reading_count = 0;
+
+void setup()
+{
+  SerialMon.begin(115200);
+  pinMode(led, OUTPUT);
+  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT);
+  
+  digitalWrite(led, HIGH);
+  delay(1000);
+  digitalWrite(led, LOW);
+  delay(1000);
+  digitalWrite(led, HIGH);
+  delay(1000);
+  digitalWrite(led, LOW);
+  delay(1000);
+  digitalWrite(led, HIGH);
+  delay(10000);
+//  digitalWrite(led, LOW);
+  pinMode(MODEM_RST, OUTPUT);
+  digitalWrite(MODEM_RST, HIGH);
+  SerialAT.begin(9600, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  delay(3000);
+  SerialMon.println("Initializing modem...");
+  delay(20000);
+  modem.restart();
+  
+  if (strlen(simPIN) && modem.getSimStatus() != 3 )
+  {
+    modem.simUnlock(simPIN);
+  }
+  SerialMon.print("Connecting to APN: ");
+  SerialMon.print(apn);
+  modem.gprsConnect(apn, gprsUser, gprsPass);
+  res = modem.isGprsConnected();
+  if (res == 0)
+  {
+    SerialMon.println(" fail");
+    delay(1000);
+    const char apn[] = "airtelgprs.com";
+    modem.gprsConnect(apn, gprsUser, gprsPass);
+    res = modem.isGprsConnected();
+    delay(3000);
+    ESP.restart();
+  }
+  res = modem.isGprsConnected();
+  if (res == 0)
+  {
+    SerialMon.println(" fail");
+    delay(1000);
+    const char apn[] = "bsnlnet";
+    modem.gprsConnect(apn, gprsUser, gprsPass);
+    res = modem.isGprsConnected();
+  }
+  res = modem.isGprsConnected();
+  if (res == 0)
+  {
+    SerialMon.println(" fail");
+    delay(1000);
+    const char apn[] = "internet";
+    modem.gprsConnect(apn, gprsUser, gprsPass);
+    res = modem.isGprsConnected();
+  }
+  res = modem.isGprsConnected();
+  if (res == 0)
+  {
+    SerialMon.println(" fail");
+    delay(1000);
+    const char apn[] = "www";
+    modem.gprsConnect(apn, gprsUser, gprsPass);
+    res = modem.isGprsConnected();
+  }
+}
+
+
+
+void loop()
+{
+  res = modem.isGprsConnected();
+  if (res == 0)
+  {
+    SerialMon.println(" fail");
+    delay(1000);
+    const char apn[] = "cmnet";
+    modem.gprsConnect(apn, gprsUser, gprsPass);
+//    ESP.restart();
+  }
+  else
+  {
+    digitalWrite(led, LOW);
+    WifiCOnnectLED();
+    sent_status = 0;
+    SerialMon.println("Starting the Collection of Data");
+    delay(1000);
+    distance_sum = 0;
+    temp_sum = 0;
+    while (1)
+    {
+      distance = 0;
+      temperature = 0;
+      delay(200);
+      digitalWrite(led, HIGH);
+      delay(100);
+      digitalWrite(led, LOW);
+      delay(50);
+      digitalWrite(led, HIGH);
+      delay(100);
+      digitalWrite(led, LOW);
+      delay(50);
+      get_temperature();
+      delay(200);
+      get_distance();
+      delay(200);
+      if (distance > 10)
+      {
+        if (temperature > 2)
+        {
+          SerialMon.println("Storing Data");
+          distance_sum = distance_sum + distance;
+          temp_sum = temp_sum + temperature;
+          reading_count = reading_count + 1;
+        }
+      }
+      else
+      {
+        SerialMon.println("");
+        SerialMon.println("Incorrect Values detected. Check all Sensors");
+        SerialMon.println("");
+        delay(100);
+      }
+
+      if (reading_count > 10)
+      {
+        dist_f = distance_sum / reading_count;
+        temp_f = temp_sum / reading_count;
+        SerialMon.println("");
+        SerialMon.println("");
+        SerialMon.print("Reading Complete - ");
+        SerialMon.print("Distance - ");
+        SerialMon.print(dist_f);
+        SerialMon.print("    Temperature - ");
+        SerialMon.print(temp_f);
+        SerialMon.println("");
+        SerialMon.println("");
+        SerialMon.println("");
+        delay(3000);
+        reading_count = 0;
+        break;
+      }
+    }
+    send_data(dist_f, temp_f);
+    while (sent_status == 0)
+    {
+      SerialMon.println("Sending Data Again");
+      send_data(dist_f, temp_f);
+    }
+    SerialMon.println("Data Sent Successfully");
+    sent_led();
+    delay(30000);
+  }
+}
+
+
+
+void get_temperature()
+{
+  sensors.requestTemperatures();
+  temperature = sensors.getTempCByIndex(0);
+  SerialMon.print("Temperature: ");
+  SerialMon.print(temperature);
+}
+
+void get_distance()
+{
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(70);
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2;
+  delay(100);
+  SerialMon.print("   Distance: ");
+  SerialMon.print(distance);
+  SerialMon.print(" cm");
+  SerialMon.println("");
+}
+
+void WifiCOnnectLED()
+{
+  for (int i = 0; i <= 5; i++)
+  {
+    digitalWrite(led, HIGH);
+    delay(1000);
+    digitalWrite(led, LOW);
+    delay(1000);
+  }
+}
+
+void send_data(float Distance_S, float Temperature_S)
+{
+  int csq = modem.getSignalQuality();
+  SerialMon.println("Signal Quality - ");
+  SerialMon.print(csq);
+  SerialMon.println(" OK");
+  SerialMon.print("Connecting to ");
+  SerialMon.print(server);
+  if (!client.connect(server, port))
+  {
+    SerialMon.println(" fail");
+  }
+  else
+  {
+    SerialMon.println(" OK");
+    SerialMon.println("Performing HTTP POST request...");
+    String httpRequestData = "api_key=" + apiKeyValue + "&field1=" + Distance_S + "&field2=" + Temperature_S + "";
+    //      String httpRequestData = "api_key=Z0X571KLJ5J5GPGB&field4=75321";
+    client.print(String("POST ") + resource + " HTTP/1.1\r\n");
+    client.print(String("Host: ") + server + "\r\n");
+    client.println("Connection: close");
+    client.println("Content-Type: application/x-www-form-urlencoded");
+    client.print("Content-Length: ");
+    client.println(httpRequestData.length());
+    client.println();
+    client.println(httpRequestData);
+    delay(100);
+
+    unsigned long timeout = millis();
+    while (client.connected() && millis() - timeout < 10000L)
+    {
+      while (client.available())
+      {
+        String line = client.readStringUntil('\n');
+        if (line.substring(0, 14).equals("Status: 200 OK"))
+        {
+          sent_status = 1;
+        }
+        timeout = millis();
+      }
+    }
+    SerialMon.println();
+    delay(1000);
+    client.stop();
+    delay(2000);
+  }
+}
+void sent_led()
+{
+  for (int i = 0; i <= 10; i++)
+  {
+    digitalWrite(led, HIGH);
+    delay(100);
+    digitalWrite(led, LOW);
+    delay(100);
+  }
+}
